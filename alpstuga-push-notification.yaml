@@ -1,0 +1,490 @@
+blueprint:
+  name: "ALPSTUGA — Air Quality Push Notifications"
+  description: >
+    Smart push notifications for IKEA ALPSTUGA E2495 air quality sensor.
+
+    Select only the sensors you need — leave the rest empty.
+    Sends ONE notification when a threshold is crossed, and ONE when it returns to normal.
+    No spam — uses input_boolean helpers + hysteresis to guarantee single alerts.
+
+    Setup: create one input_boolean helper per sensor you monitor
+    (Settings → Devices & Services → Helpers → Toggle).
+  domain: automation
+  author: badpit
+  input:
+    # ── Global ──────────────────────────────────
+    notify_service:
+      name: "📱 Notification Service"
+      description: >
+        Your mobile app notification service.
+        Find it in Developer Tools → Services → search "notify.mobile_app".
+        Example: notify.mobile_app_iphone
+      selector:
+        text:
+          type: text
+
+    stabilization_time:
+      name: "⏱️ Stabilization Time"
+      description: >
+        Seconds a reading must stay beyond threshold before notifying.
+        Prevents false alerts from brief fluctuations. Recommended: 30–120s.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 3600
+          step: 5
+          unit_of_measurement: s
+
+    # ── CO₂ ─────────────────────────────────────
+    co2_sensor:
+      name: "🫁 CO₂ Sensor"
+      description: "Leave empty to skip CO₂ monitoring."
+      default: []
+      selector:
+        entity:
+          filter:
+            - device_class: carbon_dioxide
+
+    co2_alert_threshold:
+      name: "CO₂ — Alert Above (ppm)"
+      description: "Notify when CO₂ exceeds this value."
+      default: 1000
+      selector:
+        number:
+          min: 400
+          max: 5000
+          unit_of_measurement: ppm
+
+    co2_recovery_threshold:
+      name: "CO₂ — Recovery Below (ppm)"
+      description: "Notify recovery when CO₂ drops below this. Set lower than alert for hysteresis."
+      default: 800
+      selector:
+        number:
+          min: 400
+          max: 5000
+          unit_of_measurement: ppm
+
+    co2_helper:
+      name: "CO₂ — State Helper"
+      description: "Dedicated input_boolean for anti-spam. Create one in Helpers."
+      default: []
+      selector:
+        entity:
+          domain: input_boolean
+
+    # ── PM2.5 ───────────────────────────────────
+    pm25_sensor:
+      name: "🌫️ PM2.5 Sensor"
+      description: "Leave empty to skip PM2.5 monitoring."
+      default: []
+      selector:
+        entity:
+          filter:
+            - device_class: pm25
+
+    pm25_alert_threshold:
+      name: "PM2.5 — Alert Above (µg/m³)"
+      description: "Notify when PM2.5 exceeds this value."
+      default: 25
+      selector:
+        number:
+          min: 0
+          max: 500
+          unit_of_measurement: µg/m³
+
+    pm25_recovery_threshold:
+      name: "PM2.5 — Recovery Below (µg/m³)"
+      description: "Notify recovery when PM2.5 drops below this."
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 500
+          unit_of_measurement: µg/m³
+
+    pm25_helper:
+      name: "PM2.5 — State Helper"
+      description: "Dedicated input_boolean for anti-spam."
+      default: []
+      selector:
+        entity:
+          domain: input_boolean
+
+    # ── Temperature ─────────────────────────────
+    temp_sensor:
+      name: "🌡️ Temperature Sensor"
+      description: "Leave empty to skip temperature monitoring."
+      default: []
+      selector:
+        entity:
+          filter:
+            - device_class: temperature
+
+    temp_alert_threshold:
+      name: "Temperature — Alert Above (°C)"
+      description: "Notify when temperature exceeds this value."
+      default: 26
+      selector:
+        number:
+          min: -20
+          max: 50
+          unit_of_measurement: °C
+
+    temp_recovery_threshold:
+      name: "Temperature — Recovery Below (°C)"
+      description: "Notify recovery when temperature drops below this."
+      default: 24
+      selector:
+        number:
+          min: -20
+          max: 50
+          unit_of_measurement: °C
+
+    temp_helper:
+      name: "Temperature — State Helper"
+      description: "Dedicated input_boolean for anti-spam."
+      default: []
+      selector:
+        entity:
+          domain: input_boolean
+
+    # ── Humidity ────────────────────────────────
+    humidity_sensor:
+      name: "💧 Humidity Sensor"
+      description: "Leave empty to skip humidity monitoring."
+      default: []
+      selector:
+        entity:
+          filter:
+            - device_class: humidity
+
+    humidity_alert_threshold:
+      name: "Humidity — Alert Above (%)"
+      description: "Notify when humidity exceeds this value."
+      default: 70
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+    humidity_recovery_threshold:
+      name: "Humidity — Recovery Below (%)"
+      description: "Notify recovery when humidity drops below this."
+      default: 40
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+    humidity_helper:
+      name: "Humidity — State Helper"
+      description: "Dedicated input_boolean for anti-spam."
+      default: []
+      selector:
+        entity:
+          domain: input_boolean
+
+mode: parallel
+max_exceeded: silent
+
+trigger_variables:
+  co2_entity: !input co2_sensor
+  co2_alert_val: !input co2_alert_threshold
+  co2_recovery_val: !input co2_recovery_threshold
+  co2_helper_entity: !input co2_helper
+  pm25_entity: !input pm25_sensor
+  pm25_alert_val: !input pm25_alert_threshold
+  pm25_recovery_val: !input pm25_recovery_threshold
+  pm25_helper_entity: !input pm25_helper
+  temp_entity: !input temp_sensor
+  temp_alert_val: !input temp_alert_threshold
+  temp_recovery_val: !input temp_recovery_threshold
+  temp_helper_entity: !input temp_helper
+  humidity_entity: !input humidity_sensor
+  humidity_alert_val: !input humidity_alert_threshold
+  humidity_recovery_val: !input humidity_recovery_threshold
+  humidity_helper_entity: !input humidity_helper
+  notify_service_var: !input notify_service
+
+triggers:
+  # CO₂
+  - trigger: numeric_state
+    entity_id: !input co2_sensor
+    above: !input co2_alert_threshold
+    for: { seconds: !input stabilization_time }
+    id: co2_alert
+  - trigger: numeric_state
+    entity_id: !input co2_sensor
+    below: !input co2_recovery_threshold
+    for: { seconds: !input stabilization_time }
+    id: co2_recovery
+
+  # PM2.5
+  - trigger: numeric_state
+    entity_id: !input pm25_sensor
+    above: !input pm25_alert_threshold
+    for: { seconds: !input stabilization_time }
+    id: pm25_alert
+  - trigger: numeric_state
+    entity_id: !input pm25_sensor
+    below: !input pm25_recovery_threshold
+    for: { seconds: !input stabilization_time }
+    id: pm25_recovery
+
+  # Temperature
+  - trigger: numeric_state
+    entity_id: !input temp_sensor
+    above: !input temp_alert_threshold
+    for: { seconds: !input stabilization_time }
+    id: temp_alert
+  - trigger: numeric_state
+    entity_id: !input temp_sensor
+    below: !input temp_recovery_threshold
+    for: { seconds: !input stabilization_time }
+    id: temp_recovery
+
+  # Humidity
+  - trigger: numeric_state
+    entity_id: !input humidity_sensor
+    above: !input humidity_alert_threshold
+    for: { seconds: !input stabilization_time }
+    id: humidity_alert
+  - trigger: numeric_state
+    entity_id: !input humidity_sensor
+    below: !input humidity_recovery_threshold
+    for: { seconds: !input stabilization_time }
+    id: humidity_recovery
+
+actions:
+  - choose:
+      # ═══ CO₂ ALERT ═══
+      - conditions:
+          - condition: trigger
+            id: co2_alert
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(0)) <= (co2_alert_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ co2_helper_entity == [] or not is_state(co2_helper_entity, 'on') }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ co2_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input co2_helper
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "⚠️ Wysoki poziom CO₂"
+              message: >-
+                {{ state_attr(co2_entity, 'friendly_name') }}: {{ states(co2_entity) }} ppm
+                (próg: {{ co2_alert_val }} ppm). Przewietrz pomieszczenie!
+              data:
+                tag: alpstuga_co2
+                color: "#FF6B35"
+
+      # ═══ CO₂ RECOVERY ═══
+      - conditions:
+          - condition: trigger
+            id: co2_recovery
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(9999)) >= (co2_recovery_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ co2_helper_entity == [] or is_state(co2_helper_entity, 'on') }}
+        sequence:
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "✅ CO₂ w normie"
+              message: >-
+                {{ state_attr(co2_entity, 'friendly_name') }}: {{ states(co2_entity) }} ppm — powrót poniżej {{ co2_recovery_val }} ppm.
+              data:
+                tag: alpstuga_co2
+                color: "#4CAF50"
+          - if:
+              - condition: template
+                value_template: "{{ co2_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input co2_helper
+
+      # ═══ PM2.5 ALERT ═══
+      - conditions:
+          - condition: trigger
+            id: pm25_alert
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(0)) <= (pm25_alert_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ pm25_helper_entity == [] or not is_state(pm25_helper_entity, 'on') }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ pm25_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input pm25_helper
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "⚠️ Wysoki PM2.5"
+              message: >-
+                {{ state_attr(pm25_entity, 'friendly_name') }}: {{ states(pm25_entity) }} µg/m³
+                (próg: {{ pm25_alert_val }} µg/m³). Włącz oczyszczacz powietrza.
+              data:
+                tag: alpstuga_pm25
+                color: "#FF6B35"
+
+      # ═══ PM2.5 RECOVERY ═══
+      - conditions:
+          - condition: trigger
+            id: pm25_recovery
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(9999)) >= (pm25_recovery_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ pm25_helper_entity == [] or is_state(pm25_helper_entity, 'on') }}
+        sequence:
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "✅ PM2.5 w normie"
+              message: >-
+                {{ state_attr(pm25_entity, 'friendly_name') }}: {{ states(pm25_entity) }} µg/m³ — powrót poniżej {{ pm25_recovery_val }} µg/m³.
+              data:
+                tag: alpstuga_pm25
+                color: "#4CAF50"
+          - if:
+              - condition: template
+                value_template: "{{ pm25_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input pm25_helper
+
+      # ═══ TEMPERATURE ALERT ═══
+      - conditions:
+          - condition: trigger
+            id: temp_alert
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(0)) <= (temp_alert_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ temp_helper_entity == [] or not is_state(temp_helper_entity, 'on') }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ temp_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input temp_helper
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "🌡️ Za wysoka temperatura"
+              message: >-
+                {{ state_attr(temp_entity, 'friendly_name') }}: {{ states(temp_entity) }}°C
+                (próg: {{ temp_alert_val }}°C).
+              data:
+                tag: alpstuga_temp
+                color: "#FF6B35"
+
+      # ═══ TEMPERATURE RECOVERY ═══
+      - conditions:
+          - condition: trigger
+            id: temp_recovery
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(100)) >= (temp_recovery_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ temp_helper_entity == [] or is_state(temp_helper_entity, 'on') }}
+        sequence:
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "✅ Temperatura w normie"
+              message: >-
+                {{ state_attr(temp_entity, 'friendly_name') }}: {{ states(temp_entity) }}°C — powrót poniżej {{ temp_recovery_val }}°C.
+              data:
+                tag: alpstuga_temp
+                color: "#4CAF50"
+          - if:
+              - condition: template
+                value_template: "{{ temp_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input temp_helper
+
+      # ═══ HUMIDITY ALERT ═══
+      - conditions:
+          - condition: trigger
+            id: humidity_alert
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(0)) <= (humidity_alert_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ humidity_helper_entity == [] or not is_state(humidity_helper_entity, 'on') }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ humidity_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: !input humidity_helper
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "💧 Za wysoka wilgotność"
+              message: >-
+                {{ state_attr(humidity_entity, 'friendly_name') }}: {{ states(humidity_entity) }}%
+                (próg: {{ humidity_alert_val }}%).
+              data:
+                tag: alpstuga_humidity
+                color: "#FF6B35"
+
+      # ═══ HUMIDITY RECOVERY ═══
+      - conditions:
+          - condition: trigger
+            id: humidity_recovery
+          - condition: template
+            value_template: >-
+              {{ trigger.from_state.state not in ['unavailable', 'unknown', 'none']
+                 and (trigger.from_state.state | float(100)) >= (humidity_recovery_val | float) }}
+          - condition: template
+            value_template: >-
+              {{ humidity_helper_entity == [] or is_state(humidity_helper_entity, 'on') }}
+        sequence:
+          - service: "{{ notify_service_var }}"
+            data:
+              title: "✅ Wilgotność w normie"
+              message: >-
+                {{ state_attr(humidity_entity, 'friendly_name') }}: {{ states(humidity_entity) }}% — powrót poniżej {{ humidity_recovery_val }}%.
+              data:
+                tag: alpstuga_humidity
+                color: "#4CAF50"
+          - if:
+              - condition: template
+                value_template: "{{ humidity_helper_entity != [] }}"
+            then:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: !input humidity_helper
